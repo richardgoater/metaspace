@@ -2,6 +2,8 @@ name: mol_db
 channels: !!python/tuple
 - !!python/unicode
   'defaults'
+- !!python/unicode
+  'conda-forge'
 dependencies:
 - nomkl
 - python=3.6
@@ -22,6 +24,7 @@ dependencies:
 - pip=9.0.1
 - pixman=0.34.0=0
 - psycopg2=2.6.2
+- pyarrow=0.6.0
 - python-dateutil=2.6.0
 - pytz=2017.2
 - readline=6.2=2
