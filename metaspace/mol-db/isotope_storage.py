@@ -2,10 +2,12 @@ from app.database import db_session, init_session
 from app.log import get_logger
 from app.model.molecule import Molecule
 
-import pathlib
 import pyarrow.parquet
 import pandas as pd
 import cpyMSpec as ms
+
+from itertools import product
+import pathlib
 
 logger = get_logger()
 
@@ -15,6 +17,9 @@ SIGMA_TO_FWHM = 2.3548200450309493  # 2 \sqrt{2 \log 2}
 class InstrumentSettings(object):
     def __init__(self, pts_per_mz):
         self.pts_per_mz = pts_per_mz
+
+    def __repr__(self):
+        return "<Instrument(pts_per_mz={})>".format(self.pts_per_mz)
 
 
 class IsotopePatternStorage(object):
@@ -35,23 +40,63 @@ class IsotopePatternStorage(object):
     def _load(self, filename):
         return pyarrow.parquet.read_table(str(filename)).to_pandas()
 
-    def _molecular_formulas(self, db_id):
+    def _molecular_formulas(self, db_id=None):
+        """
+        db_id=None means all databases
+        """
+        if db_id is None:
+            db_id = -1
+
         if db_id in self._mf_cache:
             return self._mf_cache[db_id]
 
-        mf_tuples = self.db_session.query(Molecule.sf)\
-                                   .filter(Molecule.db_id == db_id)\
-                                   .distinct('sf').all()
+        q = self.db_session.query(Molecule.sf)
+        if db_id != -1:
+            q = q.filter(Molecule.db_id == db_id)
+        mf_tuples = q.distinct('sf').all()
         self._mf_cache[db_id] = {t[0] for t in mf_tuples}
         return self._mf_cache[db_id]
 
-    def load_patterns(self, db_id, instrument_settings, charge):
-        mol_formulas = self._molecular_formulas(db_id)
+    def _configurations(self):
+        """
+        Represents directory tree as a dataframe with pts_per_mz, charge, adduct columns
+        """
+        result = []
+        for instr_dir in self._dir.iterdir():
+            pts_per_mz = int(instr_dir.name.split('_')[1])
+            for charge_dir in instr_dir.iterdir():
+                charge = int(charge_dir.name.split('_')[1])
+                for adduct_dir in charge_dir.iterdir():
+                    adduct = adduct_dir.name.split('_')[1].split('.')[0]
+                    result.append(dict(pts_per_mz=pts_per_mz, charge=charge, adduct=adduct))
+
+        return pd.DataFrame.from_records(result)
+
+    def adduct_charge_pairs(self):
+        """
+        Set of all (adduct, charge) combinations added so far
+        """
+        return {(x[1], x[2]) for x in self._configurations()[['adduct', 'charge']].itertuples()}
+
+    def instrument_settings(self):
+        """
+        Set of all instrument settings added so far
+        """
+        return {InstrumentSettings(pts_per_mz=x) for x in self._configurations()['pts_per_mz'].unique()}
+
+    def load_patterns(self, instrument_settings, charge, db_id=None):
         dir_path = self._dir_path(instrument_settings, charge)
         df = self._load(dir_path)
+        if not db_id:  # = all databases
+            return df
+        mol_formulas = self._molecular_formulas(db_id)
         return df[df['mf'].isin(mol_formulas)]
 
-    def add_database(self, db_id, instrument_settings, adduct, charge):
+    def generate_patterns(self, instrument_settings, adduct, charge, db_id=None):
+        """
+        Fine-grained function for generating/updating a single file.
+        db_id allows selecting a particular database, None value means all databases
+        """
         dump_path = self._path(instrument_settings, adduct, charge)
 
         existing_df = None
@@ -107,6 +152,22 @@ class IsotopePatternStorage(object):
 
         logger.info('wrote {} NEW isotope patterns to {}'.format(len(new_mol_formulas), fn))
 
+    def batch_generate(self,
+                       database_ids=None,
+                       instrument_settings_list=None,
+                       adduct_charge_pairs=None):
+        """
+        Generate isotope patterns for cartesian product of configurations
+        Each parameter is either a list or None where the latter means taking all existing values.
+        """
+        param_tuples = product(database_ids or [None],
+                               instrument_settings_list or self.instrument_settings(),
+                               adduct_charge_pairs or self.adduct_charge_pairs())
+        for params in param_tuples:
+            adduct, charge = params[-1]
+            db_id, instrument_settings = params[0:2]
+            self.generate_patterns(instrument_settings, adduct, charge, db_id)
+
 
 DECOY_ADDUCTS = ['+He', '+Li', '+Be', '+B', '+C', '+N', '+O', '+F', '+Ne', '+Mg', '+Al', '+Si', '+P', '+S', '+Cl', '+Ar', '+Ca', '+Sc', '+Ti', '+V', '+Cr', '+Mn', '+Fe', '+Co', '+Ni', '+Cu', '+Zn', '+Ga', '+Ge', '+As', '+Se', '+Br', '+Kr', '+Rb', '+Sr', '+Y', '+Zr', '+Nb', '+Mo', '+Ru', '+Rh', '+Pd', '+Ag', '+Cd', '+In', '+Sn', '+Sb', '+Te', '+I', '+Xe', '+Cs', '+Ba', '+La', '+Ce', '+Pr', '+Nd', '+Sm', '+Eu', '+Gd', '+Tb', '+Dy', '+Ho', '+Ir', '+Th', '+Pt', '+Os', '+Yb', '+Lu', '+Bi', '+Pb', '+Re', '+Tl', '+Tm', '+U', '+W', '+Au', '+Er', '+Hf', '+Hg', '+Ta']
 
@@ -117,22 +178,17 @@ if __name__ == '__main__':
 
     pattern_storage = IsotopePatternStorage(db_session, "/tmp/isotope_patterns")
 
-    for db_id in [2, 3, 4]:
-        configurations = []
+    adduct_charge_pairs = []
 
-        for adduct in ['+H', '+K', '+Na']:
-            configurations.append((adduct, 1))
+    for adduct in ['+H', '+K', '+Na']:
+        adduct_charge_pairs.append((adduct, 1))
 
-        for adduct in ['-H', '+Cl']:
-            configurations.append((adduct, -1))
+    for adduct in ['-H', '+Cl']:
+        adduct_charge_pairs.append((adduct, -1))
 
-        for adduct in DECOY_ADDUCTS:
-            configurations.append((adduct, 1))
-            configurations.append((adduct, -1))
+    for adduct in DECOY_ADDUCTS:
+        adduct_charge_pairs.append((adduct, 1))
+        adduct_charge_pairs.append((adduct, -1))
 
-        def job(configuration):
-            adduct, charge = configuration
-            pattern_storage.add_database(db_id, settings, adduct, charge)
-
-        for conf in configurations:
-            job(conf)
+    pattern_storage.batch_generate(instrument_settings_list=[settings],
+                                   adduct_charge_pairs=adduct_charge_pairs)
