@@ -6,7 +6,10 @@ import pyarrow.parquet
 import pandas as pd
 import cpyMSpec as ms
 
+from concurrent.futures import ThreadPoolExecutor
 from itertools import product
+from threading import Lock
+from multiprocessing import cpu_count
 import pathlib
 
 logger = get_logger()
@@ -29,6 +32,8 @@ class IsotopePatternStorage(object):
         self._dir.mkdir(exist_ok=True, parents=True)
         self._mf_cache = {}
 
+        self._mf_fetch_lock = Lock()
+
     def _dir_path(self, instrument_settings, charge):
         return self._dir / "pts_{}".format(instrument_settings.pts_per_mz) / "charge_{}".format(charge)
 
@@ -47,14 +52,16 @@ class IsotopePatternStorage(object):
         if db_id is None:
             db_id = -1
 
-        if db_id in self._mf_cache:
-            return self._mf_cache[db_id]
+        with self._mf_fetch_lock:
+            if db_id in self._mf_cache:
+                return self._mf_cache[db_id]
 
-        q = self.db_session.query(Molecule.sf)
-        if db_id != -1:
-            q = q.filter(Molecule.db_id == db_id)
-        mf_tuples = q.distinct('sf').all()
-        self._mf_cache[db_id] = {t[0] for t in mf_tuples}
+            q = self.db_session.query(Molecule.sf)
+            if db_id != -1:
+                q = q.filter(Molecule.db_id == db_id)
+            mf_tuples = q.distinct('sf').all()
+            self._mf_cache[db_id] = {t[0] for t in mf_tuples}
+
         return self._mf_cache[db_id]
 
     def _configurations(self):
@@ -155,18 +162,23 @@ class IsotopePatternStorage(object):
     def batch_generate(self,
                        database_ids=None,
                        instrument_settings_list=None,
-                       adduct_charge_pairs=None):
+                       adduct_charge_pairs=None,
+                       n_threads=None):
         """
         Generate isotope patterns for cartesian product of configurations
         Each parameter is either a list or None where the latter means taking all existing values.
+        n_threads sets number of threads to use, None means use all cores.
         """
         param_tuples = product(database_ids or [None],
                                instrument_settings_list or self.instrument_settings(),
                                adduct_charge_pairs or self.adduct_charge_pairs())
-        for params in param_tuples:
-            adduct, charge = params[-1]
-            db_id, instrument_settings = params[0:2]
-            self.generate_patterns(instrument_settings, adduct, charge, db_id)
+
+        # CFFI calls release GIL, therefore threads can be used efficiently
+        with ThreadPoolExecutor(max_workers=n_threads or cpu_count()) as executor:
+            for params in param_tuples:
+                adduct, charge = params[-1]
+                db_id, instr = params[0:2]
+                executor.submit(self.generate_patterns, instr, adduct, charge, db_id)
 
 
 DECOY_ADDUCTS = ['+He', '+Li', '+Be', '+B', '+C', '+N', '+O', '+F', '+Ne', '+Mg', '+Al', '+Si', '+P', '+S', '+Cl', '+Ar', '+Ca', '+Sc', '+Ti', '+V', '+Cr', '+Mn', '+Fe', '+Co', '+Ni', '+Cu', '+Zn', '+Ga', '+Ge', '+As', '+Se', '+Br', '+Kr', '+Rb', '+Sr', '+Y', '+Zr', '+Nb', '+Mo', '+Ru', '+Rh', '+Pd', '+Ag', '+Cd', '+In', '+Sn', '+Sb', '+Te', '+I', '+Xe', '+Cs', '+Ba', '+La', '+Ce', '+Pr', '+Nd', '+Sm', '+Eu', '+Gd', '+Tb', '+Dy', '+Ho', '+Ir', '+Th', '+Pt', '+Os', '+Yb', '+Lu', '+Bi', '+Pb', '+Re', '+Tl', '+Tm', '+U', '+W', '+Au', '+Er', '+Hf', '+Hg', '+Ta']
