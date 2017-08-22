@@ -6,9 +6,8 @@ import pyarrow.parquet
 import pandas as pd
 import cpyMSpec as ms
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
 from itertools import product
-from threading import Lock
 from multiprocessing import cpu_count
 import pathlib
 
@@ -27,12 +26,17 @@ class InstrumentSettings(object):
 
 class IsotopePatternStorage(object):
     def __init__(self, db_session, directory):
-        self.db_session = db_session
         self._dir = pathlib.Path(directory)
         self._dir.mkdir(exist_ok=True, parents=True)
-        self._mf_cache = {}
 
-        self._mf_fetch_lock = Lock()
+        self._mf_cache = {}
+        db_ids = db_session.query(Molecule.db_id).distinct('db_id').all()
+        for db_id in [-1] + list(db_ids):
+            q = db_session.query(Molecule.sf)
+            if db_id != -1:
+                q = q.filter(Molecule.db_id == db_id)
+            mf_tuples = q.distinct('sf').all()
+            self._mf_cache[db_id] = {t[0] for t in mf_tuples}
 
     def _dir_path(self, instrument_settings, charge):
         return self._dir / "pts_{}".format(instrument_settings.pts_per_mz) / "charge_{}".format(charge)
@@ -51,16 +55,6 @@ class IsotopePatternStorage(object):
         """
         if db_id is None:
             db_id = -1
-
-        with self._mf_fetch_lock:
-            if db_id in self._mf_cache:
-                return self._mf_cache[db_id]
-
-            q = self.db_session.query(Molecule.sf)
-            if db_id != -1:
-                q = q.filter(Molecule.db_id == db_id)
-            mf_tuples = q.distinct('sf').all()
-            self._mf_cache[db_id] = {t[0] for t in mf_tuples}
 
         return self._mf_cache[db_id]
 
@@ -163,18 +157,17 @@ class IsotopePatternStorage(object):
                        database_ids=None,
                        instrument_settings_list=None,
                        adduct_charge_pairs=None,
-                       n_threads=None):
+                       n_processes=None):
         """
         Generate isotope patterns for cartesian product of configurations
         Each parameter is either a list or None where the latter means taking all existing values.
-        n_threads sets number of threads to use, None means use all cores.
+        n_processes sets number of processes to use, None means use all cores.
         """
         param_tuples = product(database_ids or [None],
                                instrument_settings_list or self.instrument_settings(),
                                adduct_charge_pairs or self.adduct_charge_pairs())
 
-        # CFFI calls release GIL, therefore threads can be used efficiently
-        with ThreadPoolExecutor(max_workers=n_threads or cpu_count()) as executor:
+        with ProcessPoolExecutor(max_workers=n_processes or cpu_count()) as executor:
             for params in param_tuples:
                 adduct, charge = params[-1]
                 db_id, instr = params[0:2]
