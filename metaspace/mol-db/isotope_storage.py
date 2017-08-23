@@ -10,6 +10,7 @@ from concurrent.futures import ProcessPoolExecutor
 from itertools import product
 from multiprocessing import cpu_count
 import pathlib
+import subprocess
 
 logger = get_logger()
 
@@ -173,6 +174,17 @@ class IsotopePatternStorage(object):
                 db_id, instr = params[0:2]
                 executor.submit(self.generate_patterns, instr, adduct, charge, db_id)
 
+    def sync_from_s3(self, bucket='sm-engine-isotope-patterns', prefix='isotope_patterns'):
+        subprocess.check_output([
+            "aws", "s3", "sync",
+            "s3://{}/{}".format(bucket, prefix),
+            self._dir])
+
+    def sync_to_s3(self, bucket='sm-engine-isotope-patterns', prefix='isotope_patterns'):
+        subprocess.check_output([
+            "aws", "s3", "sync",
+            self._dir,
+            "s3://{}/{}".format(bucket, prefix)])
 
 DECOY_ADDUCTS = ['+He', '+Li', '+Be', '+B', '+C', '+N', '+O', '+F', '+Ne', '+Mg', '+Al', '+Si', '+P', '+S', '+Cl', '+Ar', '+Ca', '+Sc', '+Ti', '+V', '+Cr', '+Mn', '+Fe', '+Co', '+Ni', '+Cu', '+Zn', '+Ga', '+Ge', '+As', '+Se', '+Br', '+Kr', '+Rb', '+Sr', '+Y', '+Zr', '+Nb', '+Mo', '+Ru', '+Rh', '+Pd', '+Ag', '+Cd', '+In', '+Sn', '+Sb', '+Te', '+I', '+Xe', '+Cs', '+Ba', '+La', '+Ce', '+Pr', '+Nd', '+Sm', '+Eu', '+Gd', '+Tb', '+Dy', '+Ho', '+Ir', '+Th', '+Pt', '+Os', '+Yb', '+Lu', '+Bi', '+Pb', '+Re', '+Tl', '+Tm', '+U', '+W', '+Au', '+Er', '+Hf', '+Hg', '+Ta']
 
