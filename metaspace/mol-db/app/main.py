@@ -12,7 +12,7 @@ from app.api import molecules
 from app.api import isotopic_pattern
 from app.errors import AppError
 
-from isotope_storage import IsotopePatternStorage, IsotopePatternCollection
+from app.isotope_storage import IsotopePatternStorage, IsotopePatternCollection
 
 LOG = log.get_logger()
 
