@@ -12,6 +12,8 @@ from app.api import molecules
 from app.api import isotopic_pattern
 from app.errors import AppError
 
+from isotope_storage import IsotopePatternStorage, IsotopePatternCollection
+
 LOG = log.get_logger()
 
 
@@ -31,6 +33,12 @@ class App(falcon.API):
 
         self.add_route('/v1/isotopic_pattern/{ion}/{instr}/{res_power}/{at_mz}/{charge}',
                        isotopic_pattern.IsotopicPatternItem())
+
+        isotope_pattern_storage = IsotopePatternStorage(db_session, "/media/ephemeral1/isotope_patterns")
+        isotope_pattern_storage.sync_from_s3()
+
+        self.add_route('/v1/isotopic_patterns/{db_id}/{charge}/{pts_per_mz}',
+                       IsotopePatternCollection(isotope_pattern_storage))
 
         # self.add_route('/v1/sfs', formulae.SumFormulaCollection())
         # self.add_route('/v1/sfs/{sf}/molecules', formulae.SumFormulaCollection())

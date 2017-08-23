@@ -1,7 +1,7 @@
-from app.database import db_session, init_session
 from app.log import get_logger
 from app.model.molecule import Molecule
 
+import falcon
 import pyarrow.parquet
 import pandas as pd
 import cpyMSpec as ms
@@ -9,6 +9,7 @@ import cpyMSpec as ms
 from concurrent.futures import ProcessPoolExecutor
 from itertools import product
 from multiprocessing import cpu_count
+import io
 import pathlib
 import subprocess
 
@@ -26,18 +27,25 @@ class InstrumentSettings(object):
 
 
 class IsotopePatternStorage(object):
+    BUCKET = "sm-engine-isotope-patterns"
+    BUCKET_PREFIX = "isotope_patterns"
+
     def __init__(self, db_session, directory):
         self._dir = pathlib.Path(directory)
         self._dir.mkdir(exist_ok=True, parents=True)
 
         self._mf_cache = {}
         db_ids = db_session.query(Molecule.db_id).distinct('db_id').all()
-        for db_id in [-1] + list(db_ids):
+        for db_id in [-1] + [int(row[0]) for row in db_ids]:
             q = db_session.query(Molecule.sf)
             if db_id != -1:
                 q = q.filter(Molecule.db_id == db_id)
             mf_tuples = q.distinct('sf').all()
-            self._mf_cache[db_id] = {t[0] for t in mf_tuples}
+
+            # store sets as dataframes in order to perform efficient joins
+            mfs_set = {t[0] for t in mf_tuples}
+            self._mf_cache[db_id] = pd.DataFrame(dict(mf=list(mfs_set)))
+            self._mf_cache[db_id].set_index('mf', inplace=True)
 
     def _dir_path(self, instrument_settings, charge):
         return self._dir / "pts_{}".format(instrument_settings.pts_per_mz) / "charge_{}".format(charge)
@@ -48,7 +56,14 @@ class IsotopePatternStorage(object):
         return full_path
 
     def _load(self, filename):
-        return pyarrow.parquet.read_table(str(filename)).to_pandas()
+        p = pathlib.Path(filename)
+        if p.is_dir():  # only one level is supported
+            # although pyarrow.parquet theoretically can read multiple files at once,
+            # same Pandas indices seem to confuse it - some column values end up duplicated
+            dfs = [pyarrow.parquet.read_table(str(path)).to_pandas() for path in p.iterdir()]
+            return pd.concat(dfs)
+        else:
+            return pyarrow.parquet.read_table(str(filename)).to_pandas()
 
     def _molecular_formulas(self, db_id=None):
         """
@@ -57,7 +72,7 @@ class IsotopePatternStorage(object):
         if db_id is None:
             db_id = -1
 
-        return self._mf_cache[db_id]
+        return self._mf_cache[int(db_id)]
 
     def _configurations(self):
         """
@@ -92,7 +107,7 @@ class IsotopePatternStorage(object):
         if not db_id:  # = all databases
             return df
         mol_formulas = self._molecular_formulas(db_id)
-        return df[df['mf'].isin(mol_formulas)]
+        return pd.merge(df, mol_formulas, left_on='mf', right_index=True, how='inner')
 
     def generate_patterns(self, instrument_settings, adduct, charge, db_id=None):
         """
@@ -174,13 +189,13 @@ class IsotopePatternStorage(object):
                 db_id, instr = params[0:2]
                 executor.submit(self.generate_patterns, instr, adduct, charge, db_id)
 
-    def sync_from_s3(self, bucket='sm-engine-isotope-patterns', prefix='isotope_patterns'):
+    def sync_from_s3(self, bucket=BUCKET, prefix=BUCKET_PREFIX):
         subprocess.check_output([
             "aws", "s3", "sync",
             "s3://{}/{}".format(bucket, prefix),
             self._dir])
 
-    def sync_to_s3(self, bucket='sm-engine-isotope-patterns', prefix='isotope_patterns'):
+    def sync_to_s3(self, bucket=BUCKET, prefix=BUCKET_PREFIX):
         subprocess.check_output([
             "aws", "s3", "sync",
             self._dir,
@@ -188,12 +203,14 @@ class IsotopePatternStorage(object):
 
 DECOY_ADDUCTS = ['+He', '+Li', '+Be', '+B', '+C', '+N', '+O', '+F', '+Ne', '+Mg', '+Al', '+Si', '+P', '+S', '+Cl', '+Ar', '+Ca', '+Sc', '+Ti', '+V', '+Cr', '+Mn', '+Fe', '+Co', '+Ni', '+Cu', '+Zn', '+Ga', '+Ge', '+As', '+Se', '+Br', '+Kr', '+Rb', '+Sr', '+Y', '+Zr', '+Nb', '+Mo', '+Ru', '+Rh', '+Pd', '+Ag', '+Cd', '+In', '+Sn', '+Sb', '+Te', '+I', '+Xe', '+Cs', '+Ba', '+La', '+Ce', '+Pr', '+Nd', '+Sm', '+Eu', '+Gd', '+Tb', '+Dy', '+Ho', '+Ir', '+Th', '+Pt', '+Os', '+Yb', '+Lu', '+Bi', '+Pb', '+Re', '+Tl', '+Tm', '+U', '+W', '+Au', '+Er', '+Hf', '+Hg', '+Ta']
 
-
-if __name__ == '__main__':
-    init_session()
-    settings = InstrumentSettings(4039)  # corresponds to 140K
-
-    pattern_storage = IsotopePatternStorage(db_session, "/tmp/isotope_patterns")
+def compute_all_patterns(pattern_storage):
+    """
+    Computes isotope patterns for all combinations of (molecular formula, adduct, charge, instrument settings)
+    It's suggested to run this on a high-end machine (e.g. 64 threads) so that it finishes in less than 1 hour,
+    and then call sync_to_s3 method to avoid repeating the calculations.
+    """
+    settings = [InstrumentSettings(pts_per_mz) for pts_per_mz in \
+                [2019, 2885, 4039, 5770, 7212, 8078, 14425, 21637, 28850]]
 
     adduct_charge_pairs = []
 
@@ -207,5 +224,37 @@ if __name__ == '__main__':
         adduct_charge_pairs.append((adduct, 1))
         adduct_charge_pairs.append((adduct, -1))
 
-    pattern_storage.batch_generate(instrument_settings_list=[settings],
+    pattern_storage.batch_generate(instrument_settings_list=settings,
                                    adduct_charge_pairs=adduct_charge_pairs)
+
+
+class IsotopePatternCollection(object):
+    def __init__(self, pattern_storage):
+        self._storage = pattern_storage
+
+    """
+    /v1/isotope_patterns/{db_id}/{charge}/{pts_per_mz}
+
+    NB: pyarrow is still somewhat flaky, always test if the client can read the data correctly;
+    combination of Python 3.6.2 + pyarrow 0.6.0 should work, no guarantees about earlier versions.
+
+    Example of usage on the client side:
+    >>> import io
+    >>> import requests
+    >>> import pyarrow.parquet
+    >>> resp = requests.get('http://localhost:5001/v1/isotopic_patterns/3/-1/5770')
+    >>> stream = io.BytesIO(resp.content)
+    >>> df = pyarrow.parquet.read_table(stream).to_pandas()
+    >>> resp.close()
+    """
+    def on_get(self, req, res, db_id, charge, pts_per_mz):
+        db_session = req.context['session']
+        instr = InstrumentSettings(int(pts_per_mz))
+        patterns_df = self._storage.load_patterns(instr, int(charge), int(db_id))
+        sink = io.BytesIO()
+        table = pyarrow.Table.from_pandas(patterns_df)
+        pyarrow.parquet.write_table(table, sink)
+        sink.seek(0)
+        res.data = sink.read()
+        sink.close()
+        res.status = falcon.HTTP_200
