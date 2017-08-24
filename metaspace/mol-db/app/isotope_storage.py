@@ -2,6 +2,7 @@ from app.log import get_logger
 from app.model.molecule import Molecule
 
 import falcon
+import numpy as np
 import pyarrow.parquet
 import pandas as pd
 import cpyMSpec as ms
@@ -25,6 +26,7 @@ class InstrumentSettings(object):
     def __repr__(self):
         return "<Instrument(pts_per_mz={})>".format(self.pts_per_mz)
 
+DECOY_ADDUCTS = ['+He', '+Li', '+Be', '+B', '+C', '+N', '+O', '+F', '+Ne', '+Mg', '+Al', '+Si', '+P', '+S', '+Cl', '+Ar', '+Ca', '+Sc', '+Ti', '+V', '+Cr', '+Mn', '+Fe', '+Co', '+Ni', '+Cu', '+Zn', '+Ga', '+Ge', '+As', '+Se', '+Br', '+Kr', '+Rb', '+Sr', '+Y', '+Zr', '+Nb', '+Mo', '+Ru', '+Rh', '+Pd', '+Ag', '+Cd', '+In', '+Sn', '+Sb', '+Te', '+I', '+Xe', '+Cs', '+Ba', '+La', '+Ce', '+Pr', '+Nd', '+Sm', '+Eu', '+Gd', '+Tb', '+Dy', '+Ho', '+Ir', '+Th', '+Pt', '+Os', '+Yb', '+Lu', '+Bi', '+Pb', '+Re', '+Tl', '+Tm', '+U', '+W', '+Au', '+Er', '+Hf', '+Hg', '+Ta']
 
 class IsotopePatternStorage(object):
     BUCKET = "sm-engine-isotope-patterns"
@@ -108,6 +110,41 @@ class IsotopePatternStorage(object):
             return df
         mol_formulas = self._molecular_formulas(db_id)
         return pd.merge(df, mol_formulas, left_on='mf', right_index=True, how='inner')
+
+    def load_fdr_subsample(self, instrument_settings, charge, db_id,
+                           target_adducts, decoys_per_target=20,
+                           random_seed=42):
+        if random_seed:
+            np.random.seed(random_seed)
+
+        # pd.merge result is already grouped by the key, so sort is not needed
+        df = self.load_patterns(instrument_settings, charge, db_id)
+
+        df['is_target'] = df['adduct'].isin(target_adducts)
+        decoy_df, target_df = [x[1] for x in df.groupby('is_target')]  # False < True
+        n_decoy_adducts = len(decoy_df['adduct'].unique())
+        n_mf = int(len(decoy_df) / n_decoy_adducts)
+        assert decoys_per_target <= n_decoy_adducts
+
+        # assert n_mf == len(decoy_df['mf'].unique())  # slows things down, left here for debugging
+
+        # built-in np.random.choice is relatively slow for drawing samples without replacement,
+        # generating a list of M random floats and taking .argsort()[:N] is much faster, as it turns out
+        # http://numpy-discussion.10968.n7.nabble.com/Generating-random-samples-without-repeats-tp25666p25707.html
+        def _select_decoys(adduct):
+            selection = np.zeros_like(decoy_df['mf'], dtype=bool)
+            for i in range(n_mf):
+                sub_selection = np.random.rand(n_decoy_adducts).argsort()[:decoys_per_target]
+                selection[i * n_decoy_adducts : (i+1) * n_decoy_adducts][sub_selection] = True
+            return selection
+
+        for adduct in target_adducts:
+            target_df[adduct] = False
+            decoy_df[adduct] = _select_decoys(adduct)
+
+        # keep only decoy isotope patterns selected at least for one target adduct
+        decoy_df = decoy_df[decoy_df[target_adducts].sum(axis=1) > 0]
+        return pd.concat([target_df, decoy_df])
 
     def generate_patterns(self, instrument_settings, adduct, charge, db_id=None):
         """
@@ -201,7 +238,6 @@ class IsotopePatternStorage(object):
             self._dir,
             "s3://{}/{}".format(bucket, prefix)])
 
-DECOY_ADDUCTS = ['+He', '+Li', '+Be', '+B', '+C', '+N', '+O', '+F', '+Ne', '+Mg', '+Al', '+Si', '+P', '+S', '+Cl', '+Ar', '+Ca', '+Sc', '+Ti', '+V', '+Cr', '+Mn', '+Fe', '+Co', '+Ni', '+Cu', '+Zn', '+Ga', '+Ge', '+As', '+Se', '+Br', '+Kr', '+Rb', '+Sr', '+Y', '+Zr', '+Nb', '+Mo', '+Ru', '+Rh', '+Pd', '+Ag', '+Cd', '+In', '+Sn', '+Sb', '+Te', '+I', '+Xe', '+Cs', '+Ba', '+La', '+Ce', '+Pr', '+Nd', '+Sm', '+Eu', '+Gd', '+Tb', '+Dy', '+Ho', '+Ir', '+Th', '+Pt', '+Os', '+Yb', '+Lu', '+Bi', '+Pb', '+Re', '+Tl', '+Tm', '+U', '+W', '+Au', '+Er', '+Hf', '+Hg', '+Ta']
 
 def compute_all_patterns(pattern_storage):
     """
