@@ -50,7 +50,6 @@ class IsotopePatternStorage(object):
             # store sets as dataframes in order to perform efficient joins
             mfs_set = {t[0] for t in mf_tuples}
             self._mf_cache[db_id] = pd.DataFrame(dict(mf=list(mfs_set)))
-            self._mf_cache[db_id].set_index('mf', inplace=True)
 
     def _dir_path(self, instrument_settings, charge):
         return self._dir / "pts_{}".format(instrument_settings.pts_per_mz) / "charge_{}".format(charge)
@@ -115,22 +114,25 @@ class IsotopePatternStorage(object):
         """
         return {InstrumentSettings(pts_per_mz=x) for x in self._configurations()['pts_per_mz'].unique()}
 
-    def load_patterns(self, instrument_settings, charge, db_id=None):
+    def load_patterns(self, instrument_settings, charge, db_id=None, adducts=None):
         dir_path = self._dir_path(instrument_settings, charge)
         df = self._load(dir_path)
+        if adducts:
+            adducts_df = pd.DataFrame({'adduct': adducts})
+            df = pd.merge(df, adducts_df)  # faster than .isin() method
         if not db_id:  # = all databases
             return df
         mol_formulas = self._molecular_formulas(db_id)
-        return pd.merge(df, mol_formulas, left_on='mf', right_index=True, how='inner')
+        return pd.merge(df, mol_formulas)
 
     def load_fdr_subsample(self, instrument_settings, charge, db_id,
-                           target_adducts, decoys_per_target=20,
+                           target_adducts, decoy_adducts=DECOY_ADDUCTS, decoys_per_target=20,
                            random_seed=42):
         if random_seed:
             np.random.seed(random_seed)
 
         # pd.merge result is already grouped by the key, so sort is not needed
-        df = self.load_patterns(instrument_settings, charge, db_id)
+        df = self.load_patterns(instrument_settings, charge, db_id, target_adducts + decoy_adducts)
 
         df['is_target'] = df['adduct'].isin(target_adducts)
         decoy_df, target_df = [x[1] for x in df.groupby('is_target')]  # False < True
@@ -312,7 +314,13 @@ class IsotopePatternFDRSubsample(object):
         # TODO improve error handling
         db_session = req.context['session']
         target_adducts = req.get_param('targets').split(',')
+        decoy_adducts = req.get_param('decoys')
+        if decoy_adducts:
+            decoy_adducts = decoy_adducts.split(',')
+        else:
+            decoy_adducts = DECOY_ADDUCTS
         instr = InstrumentSettings(int(pts_per_mz))
-        df = self._storage.load_fdr_subsample(instr, int(charge), int(db_id), target_adducts)
+        df = self._storage.load_fdr_subsample(instr, int(charge), int(db_id),
+                                              target_adducts, decoy_adducts)
         res.data = bytes(pyarrow.ipc.serialize_pandas(df))
         res.status = falcon.HTTP_200
