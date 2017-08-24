@@ -1,11 +1,14 @@
 from app.log import get_logger
 from app.model.molecule import Molecule
+from app.config import ISOTOPE_CACHE_SIZE
 
 import falcon
 import numpy as np
 import pyarrow.parquet
+import pyarrow.ipc
 import pandas as pd
 import cpyMSpec as ms
+import functools
 
 from concurrent.futures import ProcessPoolExecutor
 from itertools import product
@@ -57,15 +60,24 @@ class IsotopePatternStorage(object):
         full_path = dir_path / "adduct_{}.parquet".format(adduct)
         return full_path
 
+    def _load_single_file(self, filename):
+        return pyarrow.parquet.read_table(str(filename)).to_pandas()
+
+    # Caches Pandas dataframes for the last few instrument/polarity configurations.
+    @functools.lru_cache(maxsize=ISOTOPE_CACHE_SIZE)
+    def _load_dir(self, directory):
+        # although pyarrow.parquet theoretically can read multiple files at once,
+        # same Pandas indices seem to confuse it - some column values end up duplicated
+        p = pathlib.Path(directory)
+        dfs = [self._load_single_file(path) for path in p.iterdir()]
+        return pd.concat(dfs)
+
     def _load(self, filename):
         p = pathlib.Path(filename)
         if p.is_dir():  # only one level is supported
-            # although pyarrow.parquet theoretically can read multiple files at once,
-            # same Pandas indices seem to confuse it - some column values end up duplicated
-            dfs = [pyarrow.parquet.read_table(str(path)).to_pandas() for path in p.iterdir()]
-            return pd.concat(dfs)
+            return self._load_dir(str(p))
         else:
-            return pyarrow.parquet.read_table(str(filename)).to_pandas()
+            return self._load_single_file(filename)
 
     def _molecular_formulas(self, db_id=None):
         """
@@ -275,24 +287,17 @@ class IsotopePatternCollection(object):
     combination of Python 3.6.2 + pyarrow 0.6.0 should work, no guarantees about earlier versions.
 
     Example of usage on the client side:
-    >>> import io
     >>> import requests
-    >>> import pyarrow.parquet
+    >>> import pyarrow.ipc
     >>> resp = requests.get('http://localhost:5001/v1/isotopic_patterns/3/-1/5770')
-    >>> stream = io.BytesIO(resp.content)
-    >>> df = pyarrow.parquet.read_table(stream).to_pandas()
+    >>> df = pyarrow.ipc.deserialize_pandas(resp.content)
     >>> resp.close()
     """
     def on_get(self, req, res, db_id, charge, pts_per_mz):
         db_session = req.context['session']
         instr = InstrumentSettings(int(pts_per_mz))
         patterns_df = self._storage.load_patterns(instr, int(charge), int(db_id))
-        sink = io.BytesIO()
-        table = pyarrow.Table.from_pandas(patterns_df)
-        pyarrow.parquet.write_table(table, sink)
-        sink.seek(0)
-        res.data = sink.read()
-        sink.close()
+        res.data = bytes(pyarrow.ipc.serialize_pandas(patterns_df))
         res.status = falcon.HTTP_200
 
 class IsotopePatternFDRSubsample(object):
@@ -309,10 +314,5 @@ class IsotopePatternFDRSubsample(object):
         target_adducts = req.get_param('targets').split(',')
         instr = InstrumentSettings(int(pts_per_mz))
         df = self._storage.load_fdr_subsample(instr, int(charge), int(db_id), target_adducts)
-        sink = io.BytesIO()
-        table = pyarrow.Table.from_pandas(df)
-        pyarrow.parquet.write_table(table, sink)
-        sink.seek(0)
-        res.data = sink.read()
-        sink.close()
+        res.data = bytes(pyarrow.ipc.serialize_pandas(df))
         res.status = falcon.HTTP_200
