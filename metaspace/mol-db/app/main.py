@@ -3,6 +3,7 @@ from os.path import dirname
 sys.path.append(dirname(dirname(__file__)))
 import falcon
 
+import app.config
 from app import log
 from app.middleware import DatabaseSessionManager
 from app.database import db_session, init_session
@@ -17,6 +18,12 @@ from app.isotope_storage import\
 
 LOG = log.get_logger()
 
+init_session()
+
+isotope_pattern_storage = IsotopePatternStorage(db_session, app.config.ISOTOPE_STORAGE_DIR)
+if app.config.ISOTOPE_S3_BUCKET:
+    isotope_pattern_storage.sync_from_s3(app.config.ISOTOPE_S3_BUCKET,
+                                         app.config.ISOTOPE_S3_PREFIX)
 
 class App(falcon.API):
     def __init__(self, *args, **kwargs):
@@ -35,10 +42,6 @@ class App(falcon.API):
         self.add_route('/v1/isotopic_pattern/{ion}/{instr}/{res_power}/{at_mz}/{charge}',
                        isotopic_pattern.IsotopicPatternItem())
 
-        isotope_pattern_storage = IsotopePatternStorage(db_session, "/media/ephemeral1/isotope_patterns")
-        isotope_pattern_storage.sync_from_s3()
-
-
         self.add_route('/v1/isotopic_patterns/{db_id}/{charge}/{pts_per_mz}',
                        IsotopePatternCollection(isotope_pattern_storage))
 
@@ -50,7 +53,6 @@ class App(falcon.API):
         # self.add_route('/v1/sfs/{sf}/molecules', formulae.SumFormulaCollection())
         self.add_error_handler(AppError, AppError.handle)
 
-init_session()
 middleware = [
     # AuthHandler(), JSONTranslator(),
     DatabaseSessionManager(db_session)

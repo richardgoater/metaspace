@@ -25,6 +25,10 @@ else:
     DB_CONFIG = (POSTGRES['user'], POSTGRES['host'], POSTGRES['database'])
     DATABASE_URL = "postgresql+psycopg2://{}@{}/{}".format(*DB_CONFIG)
 
+ISOTOPE_STORAGE_DIR = CONFIG['isotope_storage']['directory']
+ISOTOPE_S3_BUCKET = CONFIG['isotope_storage'].get('s3bucket')
+ISOTOPE_S3_PREFIX = CONFIG['isotope_storage'].get('s3prefix')
+
 DB_ECHO = True if CONFIG['database']['echo'] == 'yes' else False
 DB_AUTOCOMMIT = True
 
