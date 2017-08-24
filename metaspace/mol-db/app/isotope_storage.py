@@ -294,3 +294,25 @@ class IsotopePatternCollection(object):
         res.data = sink.read()
         sink.close()
         res.status = falcon.HTTP_200
+
+class IsotopePatternFDRSubsample(object):
+    def __init__(self, pattern_storage):
+        self._storage = pattern_storage
+
+    """
+    'targets' parameter must contain comma-separated list of target adducts
+    /v1/isotope_patterns_fdr/{db_id}/{charge}/{pts_per_mz}
+    """
+    def on_post(self, req, res, db_id, charge, pts_per_mz):
+        # TODO improve error handling
+        db_session = req.context['session']
+        target_adducts = req.get_param('targets').split(',')
+        instr = InstrumentSettings(int(pts_per_mz))
+        df = self._storage.load_fdr_subsample(instr, int(charge), int(db_id), target_adducts)
+        sink = io.BytesIO()
+        table = pyarrow.Table.from_pandas(df)
+        pyarrow.parquet.write_table(table, sink)
+        sink.seek(0)
+        res.data = sink.read()
+        sink.close()
+        res.status = falcon.HTTP_200

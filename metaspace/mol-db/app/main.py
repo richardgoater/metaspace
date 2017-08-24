@@ -12,7 +12,8 @@ from app.api import molecules
 from app.api import isotopic_pattern
 from app.errors import AppError
 
-from app.isotope_storage import IsotopePatternStorage, IsotopePatternCollection
+from app.isotope_storage import\
+    IsotopePatternStorage, IsotopePatternCollection, IsotopePatternFDRSubsample
 
 LOG = log.get_logger()
 
@@ -37,8 +38,13 @@ class App(falcon.API):
         isotope_pattern_storage = IsotopePatternStorage(db_session, "/media/ephemeral1/isotope_patterns")
         isotope_pattern_storage.sync_from_s3()
 
+
         self.add_route('/v1/isotopic_patterns/{db_id}/{charge}/{pts_per_mz}',
                        IsotopePatternCollection(isotope_pattern_storage))
+
+        self.req_options.auto_parse_form_urlencoded = True  # so that the handler can access POST params
+        self.add_route('/v1/isotopic_patterns_fdr/{db_id}/{charge}/{pts_per_mz}',
+                       IsotopePatternFDRSubsample(isotope_pattern_storage))
 
         # self.add_route('/v1/sfs', formulae.SumFormulaCollection())
         # self.add_route('/v1/sfs/{sf}/molecules', formulae.SumFormulaCollection())
