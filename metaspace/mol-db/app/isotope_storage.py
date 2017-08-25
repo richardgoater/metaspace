@@ -10,6 +10,7 @@ import pandas as pd
 import cpyMSpec as ms
 import functools
 
+from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from itertools import product
 from multiprocessing import cpu_count
@@ -31,25 +32,30 @@ class InstrumentSettings(object):
 
 DECOY_ADDUCTS = ['+He', '+Li', '+Be', '+B', '+C', '+N', '+O', '+F', '+Ne', '+Mg', '+Al', '+Si', '+P', '+S', '+Cl', '+Ar', '+Ca', '+Sc', '+Ti', '+V', '+Cr', '+Mn', '+Fe', '+Co', '+Ni', '+Cu', '+Zn', '+Ga', '+Ge', '+As', '+Se', '+Br', '+Kr', '+Rb', '+Sr', '+Y', '+Zr', '+Nb', '+Mo', '+Ru', '+Rh', '+Pd', '+Ag', '+Cd', '+In', '+Sn', '+Sb', '+Te', '+I', '+Xe', '+Cs', '+Ba', '+La', '+Ce', '+Pr', '+Nd', '+Sm', '+Eu', '+Gd', '+Tb', '+Dy', '+Ho', '+Ir', '+Th', '+Pt', '+Os', '+Yb', '+Lu', '+Bi', '+Pb', '+Re', '+Tl', '+Tm', '+U', '+W', '+Au', '+Er', '+Hf', '+Hg', '+Ta']
 
+def molecularFormulaSets(db_session):
+    """
+    returns dictionary {db_id => set of molecular formulas}
+    """
+    db_id_to_mfs = defaultdict(set)
+    q = db_session.query(Molecule.sf, Molecule.db_id).distinct()
+    for sf, db_id in q:
+        db_id_to_mfs[int(db_id)].add(sf)
+    return db_id_to_mfs
+
 class IsotopePatternStorage(object):
     BUCKET = "sm-engine-isotope-patterns"
     BUCKET_PREFIX = "isotope_patterns"
 
-    def __init__(self, db_session, directory):
+    def __init__(self, mol_formulas, directory):
         self._dir = pathlib.Path(directory)
         self._dir.mkdir(exist_ok=True, parents=True)
 
         self._mf_cache = {}
-        db_ids = db_session.query(Molecule.db_id).distinct('db_id').all()
-        for db_id in [-1] + [int(row[0]) for row in db_ids]:
-            q = db_session.query(Molecule.sf)
-            if db_id != -1:
-                q = q.filter(Molecule.db_id == db_id)
-            mf_tuples = q.distinct('sf').all()
-
-            # store sets as dataframes in order to perform efficient joins
-            mfs_set = {t[0] for t in mf_tuples}
-            self._mf_cache[db_id] = pd.DataFrame(dict(mf=list(mfs_set)))
+        all_mfs = set()
+        for db_id in mol_formulas:
+            all_mfs |= mol_formulas[db_id]
+            self._mf_cache[db_id] = pd.DataFrame({'mf': list(mol_formulas[db_id])})
+        self._mf_cache[-1] = pd.DataFrame({'mf': list(all_mfs)})
 
     def _dir_path(self, instrument_settings, charge):
         return self._dir / "pts_{}".format(instrument_settings.pts_per_mz) / "charge_{}".format(charge)
