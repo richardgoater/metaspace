@@ -183,7 +183,7 @@ class IsotopePatternStorage(object):
         else:
             dump_path.parent.mkdir(exist_ok=True, parents=True)
 
-        new_mol_formulas = list(self._molecular_formulas(db_id) - mf_finished)
+        new_mol_formulas = list(set(self._molecular_formulas(db_id)['mf']) - mf_finished)
 
         if not new_mol_formulas:
             logger.info('no new molecular formulas detected')
@@ -224,7 +224,7 @@ class IsotopePatternStorage(object):
         table = pyarrow.Table.from_pandas(df)
         pyarrow.parquet.write_table(table, fn)
 
-        logger.info('wrote {} NEW isotope patterns to {}'.format(len(new_mol_formulas), fn))
+        logger.info('wrote {} NEW isotope patterns to {}'.format(len(valid_mfs), fn))
 
     def batch_generate(self,
                        database_ids=None,
