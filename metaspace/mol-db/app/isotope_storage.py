@@ -124,7 +124,7 @@ class IsotopePatternStorage(object):
         dir_path = self._dir_path(instrument_settings, charge)
         df = self._load(dir_path)
         if adducts:
-            adducts_df = pd.DataFrame({'adduct': adducts})
+            adducts_df = pd.DataFrame({'adduct': list(set(adducts))})
             df = pd.merge(df, adducts_df)  # faster than .isin() method
         if not db_id:  # = all databases
             return df
