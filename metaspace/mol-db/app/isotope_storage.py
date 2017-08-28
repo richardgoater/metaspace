@@ -297,36 +297,14 @@ class IsotopePatternCollection(object):
     Example of usage on the client side:
     >>> import requests
     >>> import pyarrow.ipc
-    >>> resp = requests.get('http://localhost:5001/v1/isotopic_patterns/3/-1/5770')
+    >>> resp = requests.post('http://localhost:5001/v1/isotopic_patterns/3/-1/5770')
     >>> df = pyarrow.ipc.deserialize_pandas(resp.content)
     >>> resp.close()
     """
-    def on_get(self, req, res, db_id, charge, pts_per_mz):
-        db_session = req.context['session']
-        instr = InstrumentSettings(int(pts_per_mz))
-        patterns_df = self._storage.load_patterns(instr, int(charge), int(db_id))
-        res.data = bytes(pyarrow.ipc.serialize_pandas(patterns_df))
-        res.status = falcon.HTTP_200
-
-class IsotopePatternFDRSubsample(object):
-    def __init__(self, pattern_storage):
-        self._storage = pattern_storage
-
-    """
-    'targets' parameter must contain comma-separated list of target adducts
-    /v1/isotope_patterns_fdr/{db_id}/{charge}/{pts_per_mz}
-    """
     def on_post(self, req, res, db_id, charge, pts_per_mz):
-        # TODO improve error handling
         db_session = req.context['session']
-        target_adducts = req.get_param('targets').split(',')
-        decoy_adducts = req.get_param('decoys')
-        if decoy_adducts:
-            decoy_adducts = decoy_adducts.split(',')
-        else:
-            decoy_adducts = DECOY_ADDUCTS
+        adducts = (req.get_param('adducts') or '').split(',') or None
         instr = InstrumentSettings(int(pts_per_mz))
-        df = self._storage.load_fdr_subsample(instr, int(charge), int(db_id),
-                                              target_adducts, decoy_adducts)
-        res.data = bytes(pyarrow.ipc.serialize_pandas(df))
+        patterns_df = self._storage.load_patterns(instr, int(charge), int(db_id), adducts)
+        res.data = bytes(pyarrow.ipc.serialize_pandas(patterns_df))
         res.status = falcon.HTTP_200

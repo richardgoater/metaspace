@@ -66,19 +66,3 @@ def test_load_patterns(storage):
     assert 6 == len(storage.load_patterns(INSTR, charge=-1, db_id=None, adducts=['+Cl']))
     assert 4 == len(storage.load_patterns(INSTR, charge=-1, db_id=None, adducts=['-H']))
     assert 0 == len(storage.load_patterns(INSTR, charge=1, db_id=None, adducts=['-H']))
-
-def test_fdr_subsampling(storage):
-    targets = ['+H', '+Na']
-    decoys = ['+Fe', '+Ne', '+Mn', '+W', '+Ar']
-    for adduct in targets + decoys:
-        storage.generate_patterns(INSTR, adduct, 1)
-    n_decoys_per_target = 3
-    df = storage.load_fdr_subsample(INSTR, 1, 1, targets, decoys, n_decoys_per_target)
-    n_mfs = len(df['mf'].unique())
-    assert df['+H'].sum() == n_mfs * n_decoys_per_target
-    assert df['+Na'].sum() == n_mfs * n_decoys_per_target
-    assert df['is_target'].sum() == n_mfs * len(targets)
-    for mf, group in df.groupby('mf'):
-        assert group['+H'].sum() == n_decoys_per_target
-        assert group['+Na'].sum() == n_decoys_per_target
-        assert len(group) >= n_decoys_per_target + len(targets)

@@ -42,12 +42,9 @@ class App(falcon.API):
         self.add_route('/v1/isotopic_pattern/{ion}/{instr}/{res_power}/{at_mz}/{charge}',
                        isotopic_pattern.IsotopicPatternItem())
 
+        self.req_options.auto_parse_form_urlencoded = True  # so that the handler can access POST params
         self.add_route('/v1/isotopic_patterns/{db_id}/{charge}/{pts_per_mz}',
                        ips.IsotopePatternCollection(isotope_pattern_storage))
-
-        self.req_options.auto_parse_form_urlencoded = True  # so that the handler can access POST params
-        self.add_route('/v1/isotopic_patterns_fdr/{db_id}/{charge}/{pts_per_mz}',
-                       ips.IsotopePatternFDRSubsample(isotope_pattern_storage))
 
         # self.add_route('/v1/sfs', formulae.SumFormulaCollection())
         # self.add_route('/v1/sfs/{sf}/molecules', formulae.SumFormulaCollection())
