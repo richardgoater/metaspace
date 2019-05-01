@@ -37,7 +37,7 @@
   },
   "fs": {
     "data_path": "/opt/data/sm_data",
-    "s3_base_path": "{{ sm_s3_path }}"
+    "s3_data_path": "{{ sm_s3_path }}"
   },
   "spark": {
     "master": "{{ spark_master_host | default('local[*]') }}",

@@ -8,7 +8,7 @@ from sm.engine.fdr import FDR
 from sm.engine.formula_parser import generate_ion_formula
 from sm.engine.formula_centroids import CentroidsGenerator
 from sm.engine.isocalc_wrapper import IsocalcWrapper, ISOTOPIC_PEAK_N
-from sm.engine.util import SMConfig
+from sm.engine.util import SMConfig, upload_dir_to_s3, create_s3_client
 from sm.engine.msm_basic.formula_imager import create_process_segment
 from sm.engine.msm_basic.segmenter import define_ds_segments, segment_spectra, segment_centroids
 
@@ -57,8 +57,6 @@ def compute_fdr(fdr, formula_metrics_df, formula_map_df, max_fdr=0.5):
 
 
 def merge_results(results_rdd, formulas_df):
-    logger.info('Merging search results')
-
     formula_metrics_df = pd.concat(results_rdd.map(lambda t: t[0]).collect())
     formula_metrics_df = formula_metrics_df.join(formulas_df, how='left')
     formula_metrics_df = formula_metrics_df.rename({'formula': 'ion_formula'}, axis=1)  # needed for fdr
@@ -79,13 +77,14 @@ def calculate_centroids_segments_n(centr_df, ds_segments, ds_segm_size_mb):
 
 class MSMSearch(object):
 
-    def __init__(self, sc, imzml_parser, moldbs, ds_config, ds_data_path):
+    def __init__(self, sc, imzml_parser, moldbs, ds_config, ds_data_path, ds_data_s3_path=None):
         self._sc = sc
         self._ds_config = ds_config
         self._imzml_parser = imzml_parser
         self._moldbs = moldbs
         self._sm_config = SMConfig.get_conf()
         self._ds_data_path = ds_data_path
+        self._ds_data_s3_path = ds_data_s3_path
 
         self._image_gen_config = ds_config['image_generation']
         self._target_adducts = ds_config['isotope_generation']['adducts']
@@ -122,10 +121,6 @@ class MSMSearch(object):
         target_formula_inds = set(formulas_df[formulas_df.formula.isin(target_formulas)].index)
         return target_formula_inds
 
-    def upload_segments_to_workers(self, path):
-        for file_path in path.iterdir():
-            self._sc.addFile(str(file_path))
-
     def search(self):
         """ Search, score, and compute FDR for all MolDB formulas
 
@@ -152,21 +147,22 @@ class MSMSearch(object):
         ds_segments_path = self._ds_data_path / 'ds_segments'
         segment_spectra(self._imzml_parser, coordinates, ds_segments, ds_segments_path)
 
-        logger.info('Uploading dataset segments to workers')
-        self.upload_segments_to_workers(ds_segments_path)
-
         centr_df = self.clip_centroids_df(centroids_df, mz_min=ds_segments[0, 0], mz_max=ds_segments[-1, 1])
-
         centr_segments_path = self._ds_data_path / 'centr_segments'
         centr_segm_n = calculate_centroids_segments_n(centr_df, ds_segments, ds_segm_size_mb)
         segment_centroids(centr_df, centr_segm_n, centr_segments_path)
 
-        logger.info('Uploading centroids segments to workers')
-        self.upload_segments_to_workers(centr_segments_path)
+        if self._ds_data_s3_path:
+            s3 = create_s3_client(self._sm_config['aws'])
+            logger.info('Uploading dataset segments')
+            upload_dir_to_s3(s3, ds_segments_path, f'{self._ds_data_s3_path}/{ds_segments_path.name}')
+            logger.info('Uploading centroids segments')
+            upload_dir_to_s3(s3, centr_segments_path, f'{self._ds_data_s3_path}/{centr_segments_path.name}')
 
         logger.info('Processing segments...')
-        process_centr_segment = create_process_segment(ds_segments, ds_segments_path, centr_segments_path,
-                                                       coordinates, self._image_gen_config, target_formula_inds)
+        process_centr_segment = create_process_segment(ds_segments, coordinates,
+                                                       self._image_gen_config, target_formula_inds,
+                                                       ds_segments_path, centr_segments_path)
         results_rdd = self.process_segments(centr_segm_n, process_centr_segment)
         formula_metrics_df, formula_images_rdd = merge_results(results_rdd, formula_centroids.formulas_df)
 

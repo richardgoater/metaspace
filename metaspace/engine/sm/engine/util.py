@@ -9,6 +9,8 @@ import re
 from fnmatch import translate
 from copy import deepcopy
 
+import boto3
+
 
 def proj_root():
     return os.getcwd()
@@ -120,27 +122,22 @@ def read_json(path):
         return res
 
 
-def create_ds_from_files(ds_id, ds_name, ds_input_path):
-    base_dir = Path(ds_input_path)
-    meta_path = base_dir / 'meta.json'
-    if meta_path.exists():
+def create_ds_from_files(ds_id, ds_name, ds_input_path, config_path, meta_path):
+    if Path(meta_path).exists():
         metadata = json.load(open(str(meta_path)))
     else:
         raise Exception('meta.json not found')
-    ds_config = json.load(open(str(base_dir / 'config.json')))
-
-    regexp = re.compile(translate('*.imzML'), re.IGNORECASE)
-    imzml_path = [f for f in base_dir.glob('*')
-                  if re.match(regexp, str(f))][0]
-    ms_file_type_config = SMConfig.get_ms_file_handler(str(imzml_path))
-    img_storage_type = ms_file_type_config['img_storage_type']
+    ds_config = json.load(open(str(config_path)))
 
     from sm.engine.dataset import Dataset
-    return Dataset(ds_id, ds_name, str(ds_input_path), datetime.now(), metadata,
+    return Dataset(id=ds_id,
+                   name=ds_name,
+                   input_path=str(ds_input_path),
+                   upload_dt=datetime.now(),
+                   metadata=metadata,
                    is_public=True,
                    mol_dbs=ds_config['databases'],
-                   adducts=ds_config['isotope_generation']['adducts'],
-                   img_storage_type=img_storage_type)
+                   adducts=ds_config['isotope_generation']['adducts'])
 
 
 def split_s3_path(path):
@@ -150,4 +147,40 @@ def split_s3_path(path):
         tuple[string, string]
     Returns a pair of (bucket, key)
     """
-    return path.split('s3a://')[-1].split('/', 1)
+    return str(path).split('s3a://')[-1].split('/', 1)
+
+
+def create_s3_client(aws_config):
+    session = boto3.session.Session(aws_access_key_id=aws_config['aws_access_key_id'],
+                                    aws_secret_access_key=aws_config['aws_secret_access_key'])
+    return session.resource('s3', region_name=aws_config['aws_region'])
+
+
+def upload_dir_to_s3(s3, dir_path, s3_path):
+    logger = logging.getLogger('engine')
+    logger.debug(f'Uploading directory {dir_path} to {s3_path}')
+    bucket_name, prefix = split_s3_path(s3_path)
+    for local_path in dir_path.iterdir():
+        key = f'{prefix}/{dir_path.name}/{local_path.name}'
+        s3.Object(bucket_name, key).upload_file(str(local_path))
+
+
+def download_file_from_s3(s3, file, dir_path):
+    logger = logging.getLogger('engine')
+    bucket_name, key = split_s3_path(file)
+    local_path = dir_path / Path(key).name
+    if not local_path.exists():
+        logger.debug(f'Downloading file {file} to {dir_path}')
+        s3.Object(bucket_name, key).download_file(str(local_path))
+
+
+def download_prefix_from_s3(aws_config, s3_path, dir_path):
+    logger = logging.getLogger('engine')
+    logger.debug(f'Downloading S3 path {s3_path} to {dir_path}')
+
+    s3 = create_s3_client(aws_config)
+    bucket_name, key = split_s3_path(s3_path)
+    for obj_sum in (s3.Bucket(bucket_name)
+                    .objects.filter(Prefix=key)):
+        local_file = str(dir_path / Path(obj_sum.key).name)
+        obj_sum.Object().download_file(local_file)

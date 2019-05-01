@@ -16,7 +16,7 @@ from sm.engine.msm_basic.formula_validator import METRICS
 from sm.engine.msm_basic.msm_basic_search import MSMSearch
 from sm.engine.db import DB
 from sm.engine.search_results import SearchResults
-from sm.engine.util import SMConfig, split_s3_path
+from sm.engine.util import SMConfig, split_s3_path, download_prefix_from_s3
 from sm.engine.es_export import ESExporter
 from sm.engine.mol_db import MolecularDB
 from sm.engine.errors import JobFailedError
@@ -98,8 +98,13 @@ class SearchJob(object):
 
             logger.info('Parsing imzml')
             imzml_parser = ImzMLParser(self._ds_imzml_path)
+
+            ds_data_s3_path = None
+            if self._ds.input_path.startswith('s3a://'):
+                ds_data_s3_path = f"{self._sm_config['fs']['s3_data_path']}/{self._ds.id}"
             search_alg = MSMSearch(sc=self._sc, imzml_parser=imzml_parser, moldbs=moldbs,
-                                   ds_config=self._ds.config, ds_data_path=self._ds_data_path)
+                                   ds_config=self._ds.config,
+                                   ds_data_path=self._ds_data_path, ds_data_s3_path=ds_data_s3_path)
             search_results_it = search_alg.search()
 
             for moldb, moldb_ion_metrics_df, moldb_ion_images_rdd in search_results_it:
@@ -154,15 +159,7 @@ class SearchJob(object):
         self._ds_data_path = Path(self._sm_config['fs']['data_path']) / ds.id
         if ds.input_path.startswith('s3a://'):
             self._ds_data_path.mkdir(parents=True, exist_ok=True)
-
-            session = boto3.session.Session(aws_access_key_id=self._sm_config['aws']['aws_access_key_id'],
-                                            aws_secret_access_key=self._sm_config['aws']['aws_secret_access_key'])
-            bucket_name, key = split_s3_path(ds.input_path)
-            for obj_sum in (session.resource('s3')
-                            .Bucket(bucket_name)
-                            .objects.filter(Prefix=key)):
-                local_file = str(self._ds_data_path / Path(obj_sum.key).name)
-                obj_sum.Object().download_file(local_file)
+            download_prefix_from_s3(self._sm_config['aws'], ds.input_path, self._ds_data_path)
         else:
             rmtree(self._ds_data_path, ignore_errors=True)
             copytree(src=ds.input_path, dst=self._ds_data_path)
