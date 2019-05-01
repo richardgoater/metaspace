@@ -155,9 +155,9 @@ class MSMSearch(object):
         if self._ds_data_s3_path:
             s3 = create_s3_client(self._sm_config['aws'])
             logger.info('Uploading dataset segments')
-            upload_dir_to_s3(s3, ds_segments_path, f'{self._ds_data_s3_path}/{ds_segments_path.name}')
+            upload_dir_to_s3(s3, ds_segments_path, self._ds_data_s3_path)
             logger.info('Uploading centroids segments')
-            upload_dir_to_s3(s3, centr_segments_path, f'{self._ds_data_s3_path}/{centr_segments_path.name}')
+            upload_dir_to_s3(s3, centr_segments_path, self._ds_data_s3_path)
 
         logger.info('Processing segments...')
         process_centr_segment = create_process_segment(ds_segments, coordinates,
