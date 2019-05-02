@@ -36,7 +36,7 @@
     "password": "{{ rabbitmq_password }}"
   },
   "fs": {
-    "data_path": "/opt/data/sm_data",
+    "data_path": "/tmp/metaspace",
     "s3_data_path": "{{ sm_s3_path }}"
   },
   "spark": {

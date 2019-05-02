@@ -100,7 +100,7 @@ class SearchJob(object):
             imzml_parser = ImzMLParser(self._ds_imzml_path)
 
             ds_data_s3_path = None
-            if self._ds.input_path.startswith('s3a://'):
+            if self._sm_config['fs']['s3_data_path']:
                 ds_data_s3_path = f"{self._sm_config['fs']['s3_data_path']}/{self._ds.id}"
             search_alg = MSMSearch(sc=self._sc, imzml_parser=imzml_parser, moldbs=moldbs,
                                    ds_config=self._ds.config,

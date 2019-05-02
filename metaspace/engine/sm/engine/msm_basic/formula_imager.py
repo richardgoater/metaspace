@@ -101,6 +101,7 @@ def read_ds_segments(ds_segments_path, first_segm_i, last_segm_i):
         sp_arr = np.empty((0, 3))
     return sp_arr
 
+
 def segm_fn(segm_i):
     return f'{segm_i:04}.msgpack'
 
@@ -114,11 +115,14 @@ def create_process_segment(ds_segments, coordinates, image_gen_config, target_fo
     ppm = image_gen_config['ppm']
 
     def process_centr_segment(segm_i):
+        """ Note: This code is executed on Spark workers
+        """
+        centr_segments_path.mkdir(parents=True, exist_ok=True)
         centr_segm_path = centr_segments_path / segm_fn(segm_i)
 
         if centr_segments_s3_path:
             s3 = create_s3_client(aws_config)
-            download_file_from_s3(s3, f'{centr_segments_s3_path}/{segm_fn(segm_i)}', centr_segments_path)
+            download_file_from_s3(s3, f'{centr_segments_s3_path}/{segm_fn(segm_i)}', centr_segm_path)
 
         formula_metrics_df, formula_images = pd.DataFrame(), {}
         if centr_segm_path.exists():
@@ -131,7 +135,8 @@ def create_process_segment(ds_segments, coordinates, image_gen_config, target_fo
 
             if ds_segments_s3_path:
                 for ds_segm_i in range(first_ds_segm_i, last_ds_segm_i + 1):
-                    download_file_from_s3(s3, f'{ds_segments_s3_path}/{segm_fn(ds_segm_i)}', ds_segments_path)
+                    download_file_from_s3(s3, f'{ds_segments_s3_path}/{segm_fn(ds_segm_i)}',
+                                          f'{ds_segments_path}/{segm_fn(ds_segm_i)}')
 
             sp_arr = read_ds_segments(ds_segments_path, first_ds_segm_i, last_ds_segm_i)
 
@@ -142,6 +147,8 @@ def create_process_segment(ds_segments, coordinates, image_gen_config, target_fo
                                                                        compute_metrics,
                                                                        target_formula_inds)
             logger.info(f'Segment {segm_i} finished')
+        else:
+            logging.warning(f'Centroids segments path not found: {centr_segm_path}')
         return formula_metrics_df, formula_images
 
     return process_centr_segment

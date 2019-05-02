@@ -165,12 +165,11 @@ def upload_dir_to_s3(s3, dir_path, s3_path):
         s3.Object(bucket_name, key).upload_file(str(local_path))
 
 
-def download_file_from_s3(s3, file, dir_path):
+def download_file_from_s3(s3, s3_path, local_path):
     logger = logging.getLogger('engine')
-    bucket_name, key = split_s3_path(file)
-    local_path = dir_path / Path(key).name
+    bucket_name, key = split_s3_path(s3_path)
     if not local_path.exists():
-        logger.debug(f'Downloading file {file} to {dir_path}')
+        logger.debug(f'Downloading file {s3_path} to {local_path}')
         s3.Object(bucket_name, key).download_file(str(local_path))
 
 
