@@ -152,17 +152,23 @@ class MSMSearch(object):
         centr_segm_n = calculate_centroids_segments_n(centr_df, ds_segments, ds_segm_size_mb)
         segment_centroids(centr_df, centr_segm_n, centr_segments_path)
 
+        aws_config = ds_segments_s3_path = centr_segments_s3_path = None
         if self._ds_data_s3_path:
-            s3 = create_s3_client(self._sm_config['aws'])
+            aws_config = self._sm_config['aws']
+            ds_segments_s3_path = f'{self._ds_data_s3_path}/{ds_segments_path.name}'
+            centr_segments_s3_path = f'{self._ds_data_s3_path}/{centr_segments_path.name}'
+
+            s3 = create_s3_client(aws_config)
             logger.info('Uploading dataset segments')
-            upload_dir_to_s3(s3, ds_segments_path, self._ds_data_s3_path)
+            upload_dir_to_s3(s3, ds_segments_path, ds_segments_s3_path)
             logger.info('Uploading centroids segments')
-            upload_dir_to_s3(s3, centr_segments_path, self._ds_data_s3_path)
+            upload_dir_to_s3(s3, centr_segments_path, centr_segments_s3_path)
 
         logger.info('Processing segments...')
         process_centr_segment = create_process_segment(ds_segments, coordinates,
                                                        self._image_gen_config, target_formula_inds,
-                                                       ds_segments_path, centr_segments_path)
+                                                       ds_segments_path, centr_segments_path,
+                                                       aws_config, ds_segments_s3_path, centr_segments_s3_path)
         results_rdd = self.process_segments(centr_segm_n, process_centr_segment)
         formula_metrics_df, formula_images_rdd = merge_results(results_rdd, formula_centroids.formulas_df)
 

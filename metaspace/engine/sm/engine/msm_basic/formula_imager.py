@@ -136,7 +136,7 @@ def create_process_segment(ds_segments, coordinates, image_gen_config, target_fo
             if ds_segments_s3_path:
                 for ds_segm_i in range(first_ds_segm_i, last_ds_segm_i + 1):
                     download_file_from_s3(s3, f'{ds_segments_s3_path}/{segm_fn(ds_segm_i)}',
-                                          f'{ds_segments_path}/{segm_fn(ds_segm_i)}')
+                                          ds_segments_path / segm_fn(ds_segm_i))
 
             sp_arr = read_ds_segments(ds_segments_path, first_ds_segm_i, last_ds_segm_i)
 

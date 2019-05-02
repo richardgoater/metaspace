@@ -156,20 +156,20 @@ def create_s3_client(aws_config):
     return session.resource('s3', region_name=aws_config['aws_region'])
 
 
-def upload_dir_to_s3(s3, dir_path, s3_path):
+def upload_dir_to_s3(s3, local_path, s3_path):
     logger = logging.getLogger('engine')
-    logger.debug(f'Uploading directory {dir_path} to {s3_path}')
+    logger.debug(f'Uploading directory {local_path} to {s3_path}')
     bucket_name, prefix = split_s3_path(s3_path)
-    for local_path in dir_path.iterdir():
-        key = f'{prefix}/{dir_path.name}/{local_path.name}'
-        s3.Object(bucket_name, key).upload_file(str(local_path))
+    for file_path in local_path.iterdir():
+        key = f'{prefix}/{file_path.name}'
+        s3.Object(bucket_name, key).upload_file(str(file_path))
 
 
 def download_file_from_s3(s3, s3_path, local_path):
-    logger = logging.getLogger('engine')
-    bucket_name, key = split_s3_path(s3_path)
     if not local_path.exists():
+        logger = logging.getLogger('engine')
         logger.debug(f'Downloading file {s3_path} to {local_path}')
+        bucket_name, key = split_s3_path(s3_path)
         s3.Object(bucket_name, key).download_file(str(local_path))
 
 
