@@ -222,18 +222,21 @@ class AnnotationJob:
             else:
                 self._status_queue = None
 
+            logger.info('_configure_spark spark')
             self._configure_spark()
+            logger.info('_copy_input_data')
             self._copy_input_data(ds)
+            logger.info('create_imzml_parser')
             imzml_parser = self.create_imzml_parser()
-            self._save_data_from_raw_ms_file(imzml_parser)
+            # self._save_data_from_raw_ms_file(imzml_parser)
             self._img_store.storage_type = 'fs'
 
             logger.info(f'Dataset config:\n{pformat(self._ds.config)}')
 
             completed_moldb_ids, new_moldb_ids = self._moldb_ids()
-            self._remove_annotation_jobs(
-                molecular_db.find_by_ids(completed_moldb_ids - new_moldb_ids)
-            )
+            # self._remove_annotation_jobs(
+            #     molecular_db.find_by_ids(completed_moldb_ids - new_moldb_ids)
+            # )
             self._run_annotation_jobs(
                 imzml_parser, molecular_db.find_by_ids(new_moldb_ids - completed_moldb_ids)
             )

@@ -18,5 +18,6 @@ class ImzMLParserWrapper:
 
     def get_spectrum(self, idx):
         mzs, ints = self._imzml_parser.getspectrum(idx)
-        nonzero_ints_mask = ints > 0
-        return mzs[nonzero_ints_mask], ints[nonzero_ints_mask]
+        # nonzero_ints_mask = ints > 0
+        # return mzs[nonzero_ints_mask], ints[nonzero_ints_mask]
+        return mzs, ints

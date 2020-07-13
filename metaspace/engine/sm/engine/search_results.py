@@ -1,6 +1,11 @@
 import json
+import os
+import pickle
 from collections import OrderedDict
 import logging
+from datetime import datetime
+from pathlib import Path
+import uuid
 
 from sm.engine.ion_mapping import get_ion_id_mapping
 from sm.engine.png_generator import PngGenerator
@@ -17,18 +22,25 @@ METRICS_INS = (
 def post_images_to_image_store(
     formula_images_rdd, alpha_channel, img_store, img_store_type, n_peaks
 ):
-    logger.info(f'Posting iso images to {img_store}')
-    png_generator = PngGenerator(alpha_channel, greyscale=True)
+    # logger.info(f'Posting iso images to {img_store}')
+    # png_generator = PngGenerator(alpha_channel, greyscale=True)
+    logger.info(f'Dumping images')
+    p = Path('/tmp/iso_images') / datetime.utcnow().isoformat()
 
     def generate_png_and_post(imgs):
         iso_image_ids = [None] * n_peaks
+        p.mkdir(parents=True, exist_ok=True)
         for k, img in enumerate(imgs):
             if img is not None:
-                fp = png_generator.generate_png(img.toarray())
-                iso_image_ids[k] = img_store.post_image(img_store_type, 'iso_image', fp)
+                iso_image_ids[k] = str(uuid.uuid4())
+                pickle.dump(img, (p / iso_image_ids[k]).open('wb'))
+                # fp = png_generator.generate_png(img.toarray())
+                # iso_image_ids[k] = img_store.post_image(img_store_type, 'iso_image', fp)
         return {'iso_image_ids': iso_image_ids}
 
-    return dict(formula_images_rdd.mapValues(generate_png_and_post).collect())
+    result = dict(formula_images_rdd.mapValues(generate_png_and_post).collect())
+    logger.info(f'Saved {len(os.listdir(p))} images')
+    return result
 
 
 class SearchResults:
@@ -74,10 +86,19 @@ class SearchResults:
         ion_tuples = list(ions.itertuples(False, None))
         ion_mapping = get_ion_id_mapping(db, ion_tuples, self.charge)
 
-        rows = self._metrics_table_row_gen(
-            self.job_id, ion_metrics_df.reset_index(), ion_img_ids, ion_mapping
+        rows = list(
+            self._metrics_table_row_gen(
+                self.job_id, ion_metrics_df.reset_index(), ion_img_ids, ion_mapping
+            )
         )
-        db.insert(METRICS_INS, list(rows))
+        logger.info(f'Saving {len(rows)} metrics')
+        p = Path('/tmp/search_results')
+        p.mkdir(parents=True, exist_ok=True)
+        pickle.dump(
+            list(rows), (p / f'{datetime.utcnow().isoformat()}_{self.job_id}.pickle').open('wb')
+        )
+
+        # db.insert(METRICS_INS, list(rows))
 
     def store(self, metrics_df, formula_images_rdd, alpha_channel, db, img_store, img_store_type):
         """ Save formula metrics and images

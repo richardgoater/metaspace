@@ -65,7 +65,7 @@ class AnnotationQueue:
 
 class ClusterDaemon:
     def __init__(
-        self, ansible_config_path, aws_key_name=None, interval=60, qname='sm_annotate', debug=False
+        self, ansible_config_path, aws_key_name=None, interval=10, qname='sm_annotate', debug=False
     ):
         with open(ansible_config_path) as fp:
             self.ansible_config = yaml.full_load(fp)
@@ -235,25 +235,6 @@ class ClusterDaemon:
             }
             requests.post(self.ansible_config['slack_webhook_url'], json=msg)
 
-    def _ec2_hour_over(self):
-        spark_instances = list(
-            self.ec2.instances.filter(
-                Filters=[
-                    {
-                        'Name': 'tag:hostgroup',
-                        'Values': [self.master_hostgroup, self.slave_hostgroup],
-                    },
-                    {'Name': 'instance-state-name', 'Values': ['running', 'pending']},
-                ]
-            )
-        )
-        launch_time = min([i.launch_time for i in spark_instances])
-        now_time = datetime.utcnow()
-        self.logger.debug('launch: {} now: {}'.format(launch_time, now_time))
-        return (
-            0 < (60 + (launch_time.minute - now_time.minute)) % 60 <= max(5, 2 * self.interval / 60)
-        )
-
     def _try_start_setup_deploy(self, setup_failed_max=3):
         setup_failed = 0
         while True:
@@ -292,7 +273,6 @@ class ClusterDaemon:
                     if (
                         self.spark_master_public_ip is not None
                         and not self.job_running()
-                        and self.min_uptime_over(minutes=30)
                     ):
                         self.cluster_stop()
 

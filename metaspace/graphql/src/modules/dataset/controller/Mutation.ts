@@ -292,7 +292,12 @@ const MutationResolvers: FieldResolversFor<Mutation, void> = {
   },
 
   createDataset: async (source, args, ctx: Context) => {
-    return await createDataset(args, ctx);
+    const {id, input, priority} = args
+    return await createDataset({
+      datasetId: id,
+      input,
+      priority,
+    }, ctx);
   },
 
   updateDataset: async (source, args, ctx: Context) => {

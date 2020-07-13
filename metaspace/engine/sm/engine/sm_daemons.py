@@ -86,18 +86,18 @@ class DatasetManager:
     def annotate(self, ds, annotation_job_factory=None, del_first=False, **kwargs):
         """ Run an annotation job for the dataset. If del_first provided, delete first
         """
-        if del_first:
-            self.logger.warning(f'Deleting all results for dataset: {ds.id}')
-            self._del_iso_images(ds)
-            self._db.alter('DELETE FROM job WHERE ds_id=%s', params=(ds.id,))
-        ds.save(self._db, self._es)
+        # if del_first:
+        #     self.logger.warning(f'Deleting all results for dataset: {ds.id}')
+        #     self._del_iso_images(ds)
+        #     self._db.alter('DELETE FROM job WHERE ds_id=%s', params=(ds.id,))
+        # ds.save(self._db, self._es)
         annotation_job_factory(img_store=self._img_store, sm_config=self._sm_config, **kwargs).run(
             ds
         )
-        Colocalization(self._db, self._img_store).run_coloc_job(ds.id, reprocess=del_first)
-        generate_ion_thumbnail(
-            db=self._db, img_store=self._img_store, ds_id=ds.id, only_if_needed=not del_first
-        )
+        # Colocalization(self._db, self._img_store).run_coloc_job(ds.id, reprocess=del_first)
+        # generate_ion_thumbnail(
+        #     db=self._db, img_store=self._img_store, ds_id=ds.id, only_if_needed=not del_first
+        # )
 
     def index(self, ds: Dataset):
         """Re-index all search results for the dataset.
@@ -255,32 +255,33 @@ class SMAnnotateDaemon:
             self._redis_client.set('cluster-busy', 'yes', ex=3600 * 13)  # key expires in 13h
 
             ds = self._manager.load_ds(msg['ds_id'])
-            self._manager.set_ds_status(ds, DatasetStatus.ANNOTATING)
-            self._manager.notify_update(ds.id, msg['action'], DaemonActionStage.STARTED)
-
-            self._manager.post_to_slack(
-                'new', " [v] New annotation message: {}".format(json.dumps(msg))
-            )
+            # self._manager.set_ds_status(ds, DatasetStatus.ANNOTATING)
+            # self._manager.notify_update(ds.id, msg['action'], DaemonActionStage.STARTED)
+            #
+            # self._manager.post_to_slack(
+            #     'new', " [v] New annotation message: {}".format(json.dumps(msg))
+            # )
 
             self._manager.annotate(
                 ds=ds, annotation_job_factory=AnnotationJob, del_first=msg.get('del_first', False)
             )
+            self._manager.set_ds_status(ds, DatasetStatus.FINISHED)
 
-            update_msg = {
-                'ds_id': msg['ds_id'],
-                'ds_name': msg['ds_name'],
-                'email': msg.get('email', None),
-                'action': DaemonAction.INDEX,
-            }
-            self._update_queue_pub.publish(msg=update_msg, priority=DatasetActionPriority.HIGH)
+            # update_msg = {
+            #     'ds_id': msg['ds_id'],
+            #     'ds_name': msg['ds_name'],
+            #     'email': msg.get('email', None),
+            #     'action': DaemonAction.INDEX,
+            # }
+            # self._update_queue_pub.publish(msg=update_msg, priority=DatasetActionPriority.HIGH)
 
-            if self._sm_config['services'].get('off_sample', False):
-                analyze_msg = {
-                    'ds_id': msg['ds_id'],
-                    'ds_name': msg['ds_name'],
-                    'action': DaemonAction.CLASSIFY_OFF_SAMPLE,
-                }
-                self._update_queue_pub.publish(msg=analyze_msg, priority=DatasetActionPriority.LOW)
+            # if self._sm_config['services'].get('off_sample', False):
+            #     analyze_msg = {
+            #         'ds_id': msg['ds_id'],
+            #         'ds_name': msg['ds_name'],
+            #         'action': DaemonAction.CLASSIFY_OFF_SAMPLE,
+            #     }
+            #     self._update_queue_pub.publish(msg=analyze_msg, priority=DatasetActionPriority.LOW)
         except Exception as e:
             raise AnnotationError(ds_id=msg['ds_id'], traceback=format_exc(chain=False)) from e
 

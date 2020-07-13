@@ -121,7 +121,7 @@ class CentroidsGenerator:
                 new_formula_centroids = self._generate(new_formulas, index_start)
                 all_formula_centroids += new_formula_centroids
 
-        self._save(all_formula_centroids)
+        # self._save(all_formula_centroids)
 
         return all_formula_centroids.subset(formulas)
 
@@ -159,21 +159,21 @@ class CentroidsGenerator:
     def _restore(self):
         logger.info(f'Restoring peaks from {self._ion_centroids_path}')
         formula_centroids = None
-        if self._saved():
-            if self._centroids_stored_on_s3:
-                self._download_from_s3()
-
-            formulas_df = (
-                pq.read_table(self._local_ion_centroids_path / 'formulas.parquet')
-                .to_pandas()
-                .set_index('formula_i')
-            )
-            centroids_df = (
-                pq.read_table(self._local_ion_centroids_path / 'centroids.parquet')
-                .to_pandas()
-                .set_index('formula_i')
-            )
-            formula_centroids = FormulaCentroids(formulas_df, centroids_df)
+        # if self._saved():
+        #     if self._centroids_stored_on_s3:
+        #         self._download_from_s3()
+        #
+        #     formulas_df = (
+        #         pq.read_table(self._local_ion_centroids_path / 'formulas.parquet')
+        #         .to_pandas()
+        #         .set_index('formula_i')
+        #     )
+        #     centroids_df = (
+        #         pq.read_table(self._local_ion_centroids_path / 'centroids.parquet')
+        #         .to_pandas()
+        #         .set_index('formula_i')
+        #     )
+        #     formula_centroids = FormulaCentroids(formulas_df, centroids_df)
         return formula_centroids
 
     def _save(self, formula_centroids):
