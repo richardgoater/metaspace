@@ -41,17 +41,18 @@
   },
   "spark": {
     "master": "{{ spark_master_host | default('local[*]') }}",
-    "spark.executor.memory": "10g",
-    "spark.driver.memory": "4g",
-    "spark.driver.maxResultSize": "3g",
+    "spark.executor.memory": "16g",
+    "spark.driver.memory": "6g",
+    "spark.driver.maxResultSize": "4g",
     "spark.serializer": "org.apache.spark.serializer.KryoSerializer",
     "spark.kryoserializer.buffer.max": "512m",
-    "spark.python.worker.memory": "1g",
+    "spark.python.worker.memory": "2g",
     "spark.rdd.compress": true,
     "spark.ui.showConsoleProgress": false,
     "spark.sql.execution.arrow.enabled": true,
     "spark.network.timeout": "360s",
-    "spark.executor.heartbeatInterval": "60s"
+    "spark.executor.heartbeatInterval": "60s",
+    "spark.io.compression.codec": "zstd"
   },
   "aws": {
     "aws_access_key_id": "{{ aws_access_key_id }}",
