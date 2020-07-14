@@ -27,19 +27,26 @@ def post_images_to_image_store(
     logger.info(f'Dumping images')
     p = Path('/tmp/iso_images') / datetime.utcnow().isoformat()
 
-    def generate_png_and_post(imgs):
-        iso_image_ids = [None] * n_peaks
+    def generate_png_and_post(partition_idx, kvs):
+        result = []
+        images = {}
+        for k, imgs in kvs:
+            iso_image_ids = [None] * n_peaks
+            for peak_i, img in enumerate(imgs):
+                if img is not None:
+                    iso_image_ids[peak_i] = img_id = str(uuid.uuid4())
+                    images[img_id] = img
+                    # fp = png_generator.generate_png(img.toarray())
+                    # iso_image_ids[k] = img_store.post_image(img_store_type, 'iso_image', fp)
+            result.append((k, {'iso_image_ids': iso_image_ids}))
         p.mkdir(parents=True, exist_ok=True)
-        for k, img in enumerate(imgs):
-            if img is not None:
-                iso_image_ids[k] = str(uuid.uuid4())
-                pickle.dump(img, (p / iso_image_ids[k]).open('wb'))
-                # fp = png_generator.generate_png(img.toarray())
-                # iso_image_ids[k] = img_store.post_image(img_store_type, 'iso_image', fp)
-        return {'iso_image_ids': iso_image_ids}
+        pickle.dump(images, (p / f'images_{partition_idx}.pickle').open('wb'))
 
-    result = dict(formula_images_rdd.mapValues(generate_png_and_post).collect())
-    logger.info(f'Saved {len(os.listdir(p))} images')
+        return result
+
+    result = dict(formula_images_rdd.mapPartitionsWithIndex(generate_png_and_post).collect())
+    n_images = len([img for imgs in result.values() for img in imgs if img is not None])
+    logger.info(f'Saved images: {n_images} images')
     return result
 
 
