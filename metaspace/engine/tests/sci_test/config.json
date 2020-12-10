@@ -12,8 +12,8 @@
     }
   },
   "db": {
-    "host": "postgres",
-    "database": "sm",
+    "host": "localhost",
+    "database": "sm_test",
     "user": "sm",
     "password": "password"
   },
