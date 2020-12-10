@@ -10,6 +10,7 @@ from io import BytesIO
 from pathlib import Path
 from shutil import copyfileobj
 from typing import Optional, List, Iterable, Dict, Union, Tuple
+from urllib.request import urlretrieve
 
 import numpy as np
 import pandas as pd
@@ -1157,9 +1158,7 @@ class SMDataset(object):
             prefix, suffix = os.path.splitext(file['filename'])
             dest_path = dest_root / ((base_name or prefix) + suffix)
             if not dest_path.exists():
-                response = requests.get(file['link'], stream=True)
-                with dest_path.open('wb') as dest:
-                    copyfileobj(response.raw, dest)
+                urlretrieve(file['link'], dest_path)
                 print(f'Wrote {dest_path}')
             else:
                 print(f'File already exists: {dest_path}. Skipping.')
