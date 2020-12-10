@@ -132,7 +132,7 @@ def define_ds_segments(
     segm_n = int(np.ceil(total_n_mz * row_size / (ds_segm_size_mb * 2 ** 20)))
 
     segm_bounds_q = [i * 1 / segm_n for i in range(0, segm_n + 1)]
-    segm_lower_bounds = [np.quantile(sample_mzs, q) for q in segm_bounds_q]
+    segm_lower_bounds = np.quantile(sample_mzs, segm_bounds_q)
     ds_segments_bounds = np.array(list(zip(segm_lower_bounds[:-1], segm_lower_bounds[1:])))
 
     max_mz_value = 10 ** 5
