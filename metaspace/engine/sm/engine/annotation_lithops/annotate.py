@@ -153,7 +153,7 @@ def read_ds_segments(
     safe_mb = 512
     read_memory_mb = ds_segms_mb + safe_mb
     if read_memory_mb > pw_mem_mb:
-        raise Exception(
+        raise MemoryError(
             f"There isn't enough memory to read dataset segments, consider increasing "
             f"Lithops's memory to at least {read_memory_mb} mb."
         )
