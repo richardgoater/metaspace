@@ -62,7 +62,7 @@ def get_spectra(
     for i, sp_idx in enumerate(sp_inds):
         mzs = np.frombuffer(mz_data[i], dtype=imzml_reader.mzPrecision)
         ints = np.frombuffer(int_data[i], dtype=imzml_reader.intensityPrecision)
-        if (ints == 0).some():
+        if (ints == 0).any():
             # One imzml exporter includes all m/z values for all spectra, even if intensities are
             # zero. Zero-intensity peaks are useless, so exclude them.
             mzs = mzs[ints != 0]
