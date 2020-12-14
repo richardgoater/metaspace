@@ -283,7 +283,7 @@ class Executor:
         executor_type, executor = valid_executors[0]
         logger.debug(f'Selected executor {executor_type}')
 
-        backend = executor.compute_handler.backend
+        backend = getattr(executor.compute_handler, 'backend', None)
         if hasattr(backend, 'ibm_iam_api_key_manager'):
             logger.debug('Applying token expiry fix')
             # WORKAROUND due to https://github.com/lithops-cloud/lithops/issues/485
