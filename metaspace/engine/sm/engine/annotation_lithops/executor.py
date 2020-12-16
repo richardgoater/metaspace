@@ -225,7 +225,8 @@ class Executor:
                 return results
 
             except Exception as exc:
-                failed_activation_ids = [f.activation_id for f in (futures or []) if f.error]
+                failed_activation_idxs = [i for i, f in enumerate(futures or []) if f.error]
+                failed_activation_ids = [futures[i] for i in failed_activation_idxs]
 
                 self._perf.record_entry(
                     func_name,
@@ -256,15 +257,16 @@ class Executor:
 
                     logger.warning(
                         f'{func_name} timed out with {old_memory}MB, retrying with '
-                        f'{runtime_memory}MB. Failed activation(s): {failed_activation_ids}'
+                        f'{runtime_memory}MB. Failed activation(s): {failed_activation_idxs} '
+                        f'ID(s): {failed_activation_ids}'
                     )
                 else:
                     logger.error(
                         f'{func_name} raised an exception. '
-                        f'Failed activation(s): {failed_activation_ids}',
+                        f'Failed activation(s): {failed_activation_idxs} '
+                        f'ID(s): {failed_activation_ids}',
                         exc_info=True,
                     )
-                    # __import__('__main__').futures = futures
                     raise
 
     def _map_local(self, func, args):
