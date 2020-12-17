@@ -194,6 +194,7 @@ class Pipeline:  # pylint: disable=too-many-instance-attributes
     def debug_get_annotation_data(self, formula, modifier):
         """Debugging tool for finding relevant data about a particular annotation, e.g. for
         investigating MSM or image generation issues"""
+        # pylint: disable=possibly-unused-variable
         # Find formula_i(s)
         db_data_idxs = []
         db_datas = []

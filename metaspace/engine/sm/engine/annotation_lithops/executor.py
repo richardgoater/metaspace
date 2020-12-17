@@ -203,15 +203,12 @@ class Executor:
                     )
                     return_vals = executor.get_result(futures)
 
-                results = [result for result, subtask_perf in return_vals]
-                subtask_perfs = [subtask_perf for result, subtask_perf in return_vals]
-
                 if self._perf:
                     _save_subtask_perf(
                         self._perf,
                         func_name=func_name,
                         futures=futures,
-                        subtask_perfs=subtask_perfs,
+                        subtask_perfs=[subtask_perf for result, subtask_perf in return_vals],
                         cost_factors=cost_factors,
                         attempt=attempt,
                         runtime_memory=runtime_memory,
@@ -223,11 +220,12 @@ class Executor:
                     f'attempt {attempt}) - {(datetime.now() - start_time).total_seconds():.3f}s'
                 )
 
-                return results
+                return [result for result, subtask_perf in return_vals]
 
             except Exception as exc:
-                failed_activation_idxs = [i for i, f in enumerate(futures or []) if f.error]
-                failed_activation_ids = [futures[i] for i in failed_activation_idxs]
+                failed_idxs, failed_activation_ids = zip(
+                    *[(i, f) for i, f in enumerate(futures or []) if f.error]
+                )
 
                 self._perf.record_entry(
                     func_name,
@@ -258,13 +256,13 @@ class Executor:
 
                     logger.warning(
                         f'{func_name} timed out with {old_memory}MB, retrying with '
-                        f'{runtime_memory}MB. Failed activation(s): {failed_activation_idxs} '
+                        f'{runtime_memory}MB. Failed activation(s): {failed_idxs} '
                         f'ID(s): {failed_activation_ids}'
                     )
                 else:
                     logger.error(
                         f'{func_name} raised an exception. '
-                        f'Failed activation(s): {failed_activation_idxs} '
+                        f'Failed activation(s): {failed_idxs} '
                         f'ID(s): {failed_activation_ids}',
                         exc_info=True,
                     )
