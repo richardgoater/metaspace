@@ -20,7 +20,7 @@ from pyImagingMSpec.image_measures import isotope_image_correlation, isotope_pat
 from cpyImagingMSpec import measure_of_chaos
 from scipy.sparse import coo_matrix
 
-from sm.engine.ds_config import DSConfig
+from sm.engine.ds_config import DSConfigImageGeneration
 
 METRICS = OrderedDict(
     [
@@ -70,7 +70,7 @@ def replace_nan(val, default=0):
 
 
 def make_compute_image_metrics(
-    sample_area_mask: np.ndarray, nrows: int, ncols: int, ds_config: DSConfig
+    sample_area_mask: np.ndarray, nrows: int, ncols: int, img_gen_config: DSConfigImageGeneration
 ) -> ComputeMetricsFunc:
     """Returns a function for computing formula images metrics
 
@@ -79,28 +79,17 @@ def make_compute_image_metrics(
     sample_area_mask: ndarray[bool]
         mask for separating sampled pixels (True) from non-sampled (False)
 
-    ds_config : dict
+    img_gen_config : dict
+        isotope_generation section of the dataset config
     Returns
     -----
         function
     """
     empty_matrix = np.zeros((nrows, ncols))
     sample_area_mask_flat = sample_area_mask.flatten()
-    chaos_n_levels = ds_config['image_generation'].get('n_levels', 30)
-    analysis_version = ds_config.get('analysis_version', 1)
 
     def compute_metrics(iso_images_sparse, formula_ints):
         np.seterr(invalid='ignore')  # to ignore division by zero warnings
-
-        # WORKAROUND: Spark code doesn't collect the `formula_ints` value for peaks that weren't
-        # found in any spectra. This affects approximately 0.05% of annotations.
-        # To ensure the Lithops results match existing Spark results, this behavior is now applied
-        # deliberately.
-        if analysis_version < 2:
-            formula_ints = [
-                f_int if iso_images_sparse[i] is not None else 0.0
-                for i, f_int in enumerate(formula_ints)
-            ]
 
         doc = METRICS.copy()
         if iso_images_sparse:
@@ -121,7 +110,7 @@ def make_compute_image_metrics(
                 doc['spatial'] = isotope_image_correlation(iso_imgs_flat, weights=formula_ints[1:])
                 if doc['spatial'] > 0:
 
-                    moc = measure_of_chaos(iso_imgs[0], chaos_n_levels)
+                    moc = measure_of_chaos(iso_imgs[0], img_gen_config.get('n_levels', 30))
                     doc['chaos'] = 0 if np.isclose(moc, 1.0) else moc
                     if doc['chaos'] > 0:
 

@@ -235,8 +235,9 @@ def process_centr_segments(
     sample_area_mask = make_sample_area_mask(imzml_reader.coordinates)
     nrows, ncols = ds_dims(imzml_reader.coordinates)
     isocalc_wrapper = IsocalcWrapper(ds_config)
-    compute_metrics = make_compute_image_metrics(sample_area_mask, nrows, ncols, ds_config)
-    min_px = ds_config['image_generation']['min_px']
+    image_gen_config = ds_config['image_generation']
+    compute_metrics = make_compute_image_metrics(sample_area_mask, nrows, ncols, image_gen_config)
+    min_px = image_gen_config['min_px']
     pw_mem_mb = 2048 if is_intensive_dataset else 1024
 
     def process_centr_segment(
