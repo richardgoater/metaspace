@@ -224,7 +224,7 @@ class Executor:
 
             except Exception as exc:
                 failed_idxs, failed_activation_ids = zip(
-                    *[(i, f) for i, f in enumerate(futures or []) if f.error]
+                    *[(i, f.activation_id) for i, f in enumerate(futures or []) if f.error]
                 )
 
                 self._perf.record_entry(
