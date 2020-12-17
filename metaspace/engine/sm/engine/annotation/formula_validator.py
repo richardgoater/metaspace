@@ -86,7 +86,7 @@ def make_compute_image_metrics(
     """
     empty_matrix = np.zeros((nrows, ncols))
     sample_area_mask_flat = sample_area_mask.flatten()
-    chaos_n_levels = ds_config['isotope_generation'].get('n_levels', 30)
+    chaos_n_levels = ds_config['image_generation'].get('n_levels', 30)
     analysis_version = ds_config.get('analysis_version', 1)
 
     def compute_metrics(iso_images_sparse, formula_ints):
