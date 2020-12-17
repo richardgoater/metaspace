@@ -18,13 +18,13 @@ METASPACE team members can use `eu-de`/Frankfurt for all services.
     * **Resource group:** `dev-<your initials>`
 6. Create buckets in the service you just created. Use "Customize your bucket", not one of the predefined buckets:
     * A persistent storage bucket for data like imzml files and the centroids cache
-        * **Name:** `metaspace-dev-<your initials>-data`:
+        * **Name:** `metaspace-<your initials>-data`:
         * This will be used for normal persistent data such as imzml files, moldb files and the centroids cache
         * **Resiliency:** Regional
         * **Storage class:** Smart Tier
     * A temp bucket for Lithops and other temp data  
         * It's easy to accidentally generate huge amounts of data with Lithops, so this includes a rule to automatically delete objects after 1 day:
-        * **Name:** `metaspace-dev-<your initials>-temp`:
+        * **Name:** `metaspace-<your initials>-temp`:
         * **Resiliency:** Regional
         * **Storage class:** Standard
         * Create an **Expiration** rule:

@@ -17,9 +17,9 @@ from sm.engine.annotation.formula_validator import (
 @patch('sm.engine.annotation.formula_validator.isotope_image_correlation', return_value=0.9)
 @patch('sm.engine.annotation.formula_validator.measure_of_chaos', return_value=0.9)
 def test_get_compute_img_measures_pass(chaos_mock, image_corr_mock, pattern_match_mock):
-    img_gen_config = {'n_levels': 30}
+    ds_config = {'image_generation': {'n_levels': 30}}
     sample_area_mask = np.ones((2, 3), dtype=int)
-    compute_metrics = make_compute_image_metrics(sample_area_mask, 2, 3, img_gen_config)
+    compute_metrics = make_compute_image_metrics(sample_area_mask, 2, 3, ds_config)
 
     formula_images = [
         coo_matrix([[0.0, 100.0, 100.0], [10.0, 0.0, 3.0]]),

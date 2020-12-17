@@ -127,9 +127,7 @@ def create_process_segment(
 ):
     sample_area_mask = make_sample_area_mask(coordinates)
     nrows, ncols = get_ds_dims(coordinates)
-    compute_metrics = make_compute_image_metrics(
-        sample_area_mask, nrows, ncols, ds_config['image_generation']
-    )
+    compute_metrics = make_compute_image_metrics(sample_area_mask, nrows, ncols, ds_config)
     isocalc = IsocalcWrapper(ds_config)
     ppm = ds_config['image_generation']['ppm']
     min_px = ds_config['image_generation']['min_px']
