@@ -148,7 +148,7 @@
             "level": "INFO"
         },
         "lithops": {
-            "level": "DEBUG"
+            "level": "INFO"
         }
     }
   },
