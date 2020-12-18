@@ -223,9 +223,9 @@ class Executor:
                 return [result for result, subtask_perf in return_vals]
 
             except Exception as exc:
-                failed_idxs, failed_activation_ids = zip(
-                    *[(i, f.activation_id) for i, f in enumerate(futures or []) if f.error]
-                )
+                failed_idxs = [i for i, f in enumerate(futures or []) if f.error]
+                # pylint: disable=unsubscriptable-object # (because futures is Optional)
+                failed_activation_ids = [futures[i].activation_id for i in failed_idxs]
 
                 self._perf.record_entry(
                     func_name,
